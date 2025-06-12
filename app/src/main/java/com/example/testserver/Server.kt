@@ -37,6 +37,23 @@ class Server(
     private var currentPhotoBase64: String = ""
     private var currentAudioBase64: String = ""
 
+    // FIXED: Allinea le chiavi con quelle generate in DynamicSensorSettingsFragment
+    private val mainSensorMap = mapOf(
+        Sensor.TYPE_ACCELEROMETER to SensorInfo("accelerometro", "Accelerometro", "X, Y, Z (m/s²)"),
+        Sensor.TYPE_GYROSCOPE to SensorInfo("giroscopio", "Giroscopio", "X, Y, Z (rad/s)"),
+        Sensor.TYPE_MAGNETIC_FIELD to SensorInfo("campo_magnetico", "Campo Magnetico", "X, Y, Z (μT)"),
+        Sensor.TYPE_LIGHT to SensorInfo("luminosità", "Luminosità", "Lux"),
+        Sensor.TYPE_PROXIMITY to SensorInfo("prossimità", "Prossimità", "cm"),
+        Sensor.TYPE_PRESSURE to SensorInfo("pressione", "Pressione", "hPa"),
+        Sensor.TYPE_AMBIENT_TEMPERATURE to SensorInfo("temperatura", "Temperatura", "°C"),
+        Sensor.TYPE_RELATIVE_HUMIDITY to SensorInfo("umidità", "Umidità", "%"),
+        Sensor.TYPE_LINEAR_ACCELERATION to SensorInfo("accelerazione_lineare", "Accelerazione Lineare", "X, Y, Z (m/s²)"),
+        Sensor.TYPE_ROTATION_VECTOR to SensorInfo("vettore_rotazione", "Vettore Rotazione", "X, Y, Z, W"),
+        Sensor.TYPE_GRAVITY to SensorInfo("gravità", "Gravità", "X, Y, Z (m/s²)"),
+        Sensor.TYPE_STEP_COUNTER to SensorInfo("contapassi", "Contapassi", "steps"),
+        Sensor.TYPE_HEART_RATE to SensorInfo("frequenza_cardiaca", "Frequenza Cardiaca", "bpm")
+    )
+
     suspend fun start(): List<WoTExposedThing> {
         // Stop eventuali Thing attivi
         stop()
@@ -56,7 +73,7 @@ class Server(
     }
 
     private fun createSmartphoneThing() : WoTExposedThing? {
-        val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val sharedPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val availableSensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
         val jsonNodeFactory = JsonNodeFactory.instance
@@ -64,13 +81,20 @@ class Server(
         val thingTitle = "Smartphone sensors"
         val thingDescription = "Thing representing selected sensors of the smartphone"
 
-        // Controlla se ci sono sensori abilitati
-        val enabledSensors = availableSensors.filter { sensor ->
-            val prefKey = "share_sensor_${sensor.name}"
-            sharedPrefs.getBoolean(prefKey, false)
+        // FIXED: Controlla se ci sono sensori abilitati usando le chiavi corrette
+        val enabledSensors = mainSensorMap.filter { (sensorType, sensorInfo) ->
+            val sensor = sensorManager.getDefaultSensor(sensorType)
+            // FIXED: Genera la chiave nello stesso modo del DynamicSensorSettingsFragment
+            val prefKey = "share_sensor_${sensorInfo.displayName.replace(" ", "_").lowercase()}"
+            val isEnabled = sensor != null && sharedPrefs.getBoolean(prefKey, false)
+            Log.d("SERVER", "Checking sensor ${sensorInfo.displayName} with key $prefKey: $isEnabled")
+            isEnabled
         }
+
         if (enabledSensors.isEmpty()) {
             Log.d("SERVER", "Nessun sensore abilitato!")
+        } else {
+            Log.d("SERVER", "Sensori abilitati: ${enabledSensors.values.map { it.displayName }}")
         }
 
         val thing = wot.produce {
@@ -79,15 +103,13 @@ class Server(
             description = thingDescription
 
             // Aggiungi proprietà per ogni sensore abilitato
-            for (sensor in enabledSensors) {
-                val type = sensor.type
-                val name = sensor.name
-                val sensorValuesCount = getSensorValuesCount(type)
-                val units = getSensorUnits(type)
+            for ((sensorType, sensorInfo) in enabledSensors) {
+                val sensorValuesCount = getSensorValuesCount(sensorType)
+                val units = getSensorUnits(sensorType)
                 if (sensorValuesCount == 1) {
-                    val propName = sanitizeSensorName(name, type)
+                    val propName = sensorInfo.key
                     numberProperty(propName) {
-                        title = name
+                        title = sensorInfo.displayName
                         readOnly = true
                         observable = true
                         unit = units.getOrNull(0)
@@ -95,9 +117,9 @@ class Server(
                 } else {
                     for (i in 0 until sensorValuesCount) {
                         val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i) ?: "v$i"
-                        val propName = "${sanitizeSensorName(name, type)}_$suffix"
+                        val propName = "${sensorInfo.key}_$suffix"
                         numberProperty(propName) {
-                            title = "$name $suffix"
+                            title = "${sensorInfo.displayName} $suffix"
                             readOnly = true
                             observable = true
                             unit = units.getOrNull(i)
@@ -136,24 +158,22 @@ class Server(
             }
         }.apply {
             // Aggiungi i property read handlers
-            for (sensor in enabledSensors) {
-                val type = sensor.type
-                val name = sensor.name
-                val sensorValuesCount = getSensorValuesCount(type)
+            for ((sensorType, sensorInfo) in enabledSensors) {
+                val sensorValuesCount = getSensorValuesCount(sensorType)
                 if (sensorValuesCount == 1) {
-                    val propName = sanitizeSensorName(name, type)
+                    val propName = sensorInfo.key
                     setPropertyReadHandler(propName) {
                         ServientStats.logRequest(thingId, "readProperty", propName)
-                        val v = readSensorValues(context, type)
+                        val v = readSensorValues(context, sensorType)
                         InteractionInput.Value(jsonNodeFactory.numberNode(v.getOrNull(0) ?: -1f))
                     }
                 } else {
                     for (i in 0 until sensorValuesCount) {
                         val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i) ?: "v$i"
-                        val propName = "${sanitizeSensorName(name, type)}_$suffix"
+                        val propName = "${sensorInfo.key}_$suffix"
                         setPropertyReadHandler(propName) {
                             ServientStats.logRequest(thingId, "readProperty", propName)
-                            val v = readSensorValues(context, type)
+                            val v = readSensorValues(context, sensorType)
                             InteractionInput.Value(jsonNodeFactory.numberNode(v.getOrNull(i) ?: -1f))
                         }
                     }
@@ -224,38 +244,35 @@ class Server(
             Log.e("SERVER", "Errore creazione SmartphoneThing", e)
             return null
         }
-
-
-
     }
 
     suspend fun updateExposedThings(): List<WoTExposedThing> {
         val sharedPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val availableSensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
         val wantedThingIds = mutableSetOf<String>()
         val newlyAdded = mutableListOf<WoTExposedThing>()
 
-        for (sensor in availableSensors) {
-            val prefKey = "share_sensor_${sensor.name}"
+        for ((sensorType, sensorInfo) in mainSensorMap) {
+            val sensor = sensorManager.getDefaultSensor(sensorType)
+            if (sensor == null) continue
+
+            // FIXED: Usa la stessa logica di generazione delle chiavi
+            val prefKey = "share_sensor_${sensorInfo.displayName.replace(" ", "_").lowercase()}"
             val shouldShare = sharedPrefs.getBoolean(prefKey, false)
             if (!shouldShare) continue
 
             Log.d("SERVER_PREF", "Checking $prefKey = $shouldShare")
-            val type = sensor.type
-            val name = sensor.name
-            val thingId = sanitizeSensorName(name, type)
+            val thingId = sensorInfo.key
             wantedThingIds.add(thingId)
 
             if (thingId in activeThings) continue
 
-            val sensorValuesCount = getSensorValuesCount(type)
-            val units = getSensorUnits(type)
-            // TODO: PROBLEMA QUA -- NON PRODUCO A LOCALHOST:$PORT MA SEMPRE LOCALHOST:8080
+            val sensorValuesCount = getSensorValuesCount(sensorType)
+            val units = getSensorUnits(sensorType)
             val thing = wot.produce {
                 id = thingId
-                title = name
-                description = "Thing for sensor $name, type: $type"
+                title = sensorInfo.displayName
+                description = "Thing for sensor ${sensorInfo.displayName}, type: $sensorType"
 
                 if (sensorValuesCount == 1) {
                     numberProperty("value") {
@@ -276,11 +293,11 @@ class Server(
                     }
                 }
             }.apply {
-                val sensorType = type
+                val currentSensorType = sensorType
                 if (sensorValuesCount == 1) {
                     setPropertyReadHandler("value") {
                         ServientStats.logRequest(thingId, "readProperty", "value")
-                        val v = readSensorValues(context, sensorType)
+                        val v = readSensorValues(context, currentSensorType)
                         InteractionInput.Value(jsonNodeFactory.numberNode(v.getOrNull(0) ?: -1f))
                     }
                 } else {
@@ -288,7 +305,7 @@ class Server(
                         val propName = listOf("x", "y", "z").getOrNull(i) ?: "v$i"
                         setPropertyReadHandler(propName) {
                             ServientStats.logRequest(thingId, "readProperty", propName)
-                            val v = readSensorValues(context, sensorType)
+                            val v = readSensorValues(context, currentSensorType)
                             InteractionInput.Value(jsonNodeFactory.numberNode(v.getOrNull(i) ?: -1f))
                         }
                     }
@@ -374,11 +391,15 @@ class Server(
     fun getSensorUnits(type: Int): List<String?> = when (type) {
         Sensor.TYPE_LIGHT -> listOf("lux")
         Sensor.TYPE_PRESSURE -> listOf("hPa")
-        Sensor.TYPE_ACCELEROMETER -> listOf("m/s^2")
-        Sensor.TYPE_MAGNETIC_FIELD -> listOf("μT")
+        Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_LINEAR_ACCELERATION, Sensor.TYPE_GRAVITY -> listOf("m/s²", "m/s²", "m/s²")
+        Sensor.TYPE_GYROSCOPE -> listOf("rad/s", "rad/s", "rad/s")
+        Sensor.TYPE_MAGNETIC_FIELD -> listOf("μT", "μT", "μT")
         Sensor.TYPE_PROXIMITY -> listOf("cm")
         Sensor.TYPE_AMBIENT_TEMPERATURE -> listOf("°C")
         Sensor.TYPE_RELATIVE_HUMIDITY -> listOf("%")
+        Sensor.TYPE_STEP_COUNTER -> listOf("steps")
+        Sensor.TYPE_HEART_RATE -> listOf("bpm")
+        Sensor.TYPE_ROTATION_VECTOR -> listOf(null, null, null, null)
         else -> listOf(null)
     }
 
@@ -430,4 +451,10 @@ class Server(
         }
     }
 
+    // Data class per le informazioni dei sensori
+    private data class SensorInfo(
+        val key: String,
+        val displayName: String,
+        val values: String
+    )
 }

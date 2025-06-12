@@ -32,6 +32,23 @@ class SensorDataFragment : Fragment() {
     private lateinit var refreshButton: Button
     private lateinit var sensorDataContainer: LinearLayout
 
+    // FIXED: Allinea le chiavi con quelle del Server
+    private val mainSensorMap = mapOf(
+        Sensor.TYPE_ACCELEROMETER to SensorInfo("accelerometro", "Accelerometro", "X, Y, Z (m/s²)"),
+        Sensor.TYPE_GYROSCOPE to SensorInfo("giroscopio", "Giroscopio", "X, Y, Z (rad/s)"),
+        Sensor.TYPE_MAGNETIC_FIELD to SensorInfo("campo_magnetico", "Campo Magnetico", "X, Y, Z (μT)"),
+        Sensor.TYPE_LIGHT to SensorInfo("luminosità", "Luminosità", "Lux"), // FIXED: con accento
+        Sensor.TYPE_PROXIMITY to SensorInfo("prossimità", "Prossimità", "cm"), // FIXED: con accento
+        Sensor.TYPE_PRESSURE to SensorInfo("pressione", "Pressione", "hPa"),
+        Sensor.TYPE_AMBIENT_TEMPERATURE to SensorInfo("temperatura", "Temperatura", "°C"),
+        Sensor.TYPE_RELATIVE_HUMIDITY to SensorInfo("umidità", "Umidità", "%"),
+        Sensor.TYPE_LINEAR_ACCELERATION to SensorInfo("accelerazione_lineare", "Accelerazione Lineare", "X, Y, Z (m/s²)"),
+        Sensor.TYPE_ROTATION_VECTOR to SensorInfo("vettore_rotazione", "Vettore Rotazione", "X, Y, Z, W"),
+        Sensor.TYPE_GRAVITY to SensorInfo("gravità", "Gravità", "X, Y, Z (m/s²)"),
+        Sensor.TYPE_STEP_COUNTER to SensorInfo("contapassi", "Contapassi", "steps"),
+        Sensor.TYPE_HEART_RATE to SensorInfo("frequenza_cardiaca", "Frequenza Cardiaca", "bpm")
+    )
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -67,31 +84,37 @@ class SensorDataFragment : Fragment() {
                 val wot = WoTClientHolder.wot!!
                 val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
                 val sensorManager = requireContext().getSystemService(Context.SENSOR_SERVICE) as SensorManager
-                val sensorList = sensorManager.getSensorList(Sensor.TYPE_ALL)
 
                 val selectedProperties = mutableListOf<String>()
-                for (sensor in sensorList) {
-                    val key = "share_sensor_${sensor.name}"
-                    if (!sharedPrefs.getBoolean(key, false)) continue
 
-                    val sanitized = sensor.name.lowercase()
-                        .replace("\\s+".toRegex(), "-")
-                        .replace("[^a-z0-9\\-]".toRegex(), "") + "-${sensor.type}"
-                    val sensorType = sensor.type
-                    val numAxes = when (sensorType) {
-                        Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_GYROSCOPE,
-                        Sensor.TYPE_GRAVITY, Sensor.TYPE_MAGNETIC_FIELD -> 3
-                        else -> 1
+                // FIXED: Genera le proprietà usando la stessa logica del Server
+                for ((sensorType, sensorInfo) in mainSensorMap) {
+                    val sensor = sensorManager.getDefaultSensor(sensorType)
+                    if (sensor == null) continue
+
+                    // FIXED: Usa la stessa logica di generazione delle chiavi del Server
+                    val prefKey = "share_sensor_${sensorInfo.displayName.replace(" ", "_").lowercase()}"
+                    if (!sharedPrefs.getBoolean(prefKey, false)) {
+                        Log.d("SENSOR_DATA", "Sensor ${sensorInfo.displayName} not enabled (key: $prefKey)")
+                        continue
                     }
 
-                    if (numAxes == 1) {
-                        selectedProperties.add(sanitized)
+                    Log.d("SENSOR_DATA", "Sensor ${sensorInfo.displayName} is enabled (key: $prefKey)")
+
+                    val sensorValuesCount = getSensorValuesCount(sensorType)
+                    if (sensorValuesCount == 1) {
+                        // Per sensori con un valore singolo, usa il key come nome proprietà
+                        selectedProperties.add(sensorInfo.key)
                     } else {
-                        selectedProperties.add("${sanitized}_x")
-                        selectedProperties.add("${sanitized}_y")
-                        selectedProperties.add("${sanitized}_z")
+                        // Per sensori multi-valore, aggiungi suffissi x, y, z, w
+                        for (i in 0 until sensorValuesCount) {
+                            val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i) ?: "v$i"
+                            selectedProperties.add("${sensorInfo.key}_$suffix")
+                        }
                     }
                 }
+
+                Log.d("SENSOR_DATA", "Selected properties: $selectedProperties")
 
                 val port = sharedPrefs.getString("server_port", "8080")?.toIntOrNull() ?: 8080
                 val url = "http://localhost:$port/smartphone"
@@ -146,10 +169,17 @@ class SensorDataFragment : Fragment() {
             val timestamp = System.currentTimeMillis()
             withContext(Dispatchers.Main) {
                 for ((prop, value) in values) {
-                    val floatValue = (value as? Float) ?: -1f
+                    val floatValue = when (value) {
+                        is Float -> value
+                        is Double -> value.toFloat()
+                        is Number -> value.toFloat()
+                        else -> -1f
+                    }
+
                     propertyViews[prop]?.text = if (floatValue == -1f)
                         "$prop: Sensore non presente" else "$prop: $value"
-                    if (value != -1f) {
+
+                    if (floatValue != -1f) {
                         SensorDataHolder.addData(prop, timestamp, floatValue)
                     }
                 }
@@ -159,6 +189,19 @@ class SensorDataFragment : Fragment() {
                 propertyViews.values.forEach { it.text = "errore" }
             }
         }
+    }
+
+    private fun getSensorValuesCount(sensorType: Int): Int = when (sensorType) {
+        Sensor.TYPE_ACCELEROMETER,
+        Sensor.TYPE_GRAVITY,
+        Sensor.TYPE_GYROSCOPE,
+        Sensor.TYPE_MAGNETIC_FIELD -> 3
+
+        Sensor.TYPE_ROTATION_VECTOR -> 4
+        Sensor.TYPE_GAME_ROTATION_VECTOR -> 4
+        Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR -> 5
+
+        else -> 1
     }
 
     private suspend fun waitForServerStart(maxRetries: Int = 10, delayMillis: Long = 500): Boolean {
@@ -174,4 +217,11 @@ class SensorDataFragment : Fragment() {
         super.onDestroyView()
         coroutineScope.cancel()
     }
+
+    // Data class per le informazioni dei sensori
+    private data class SensorInfo(
+        val key: String,
+        val displayName: String,
+        val values: String
+    )
 }

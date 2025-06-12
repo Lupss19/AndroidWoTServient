@@ -7,7 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
-import android.preference.PreferenceManager
+import androidx.preference.PreferenceManager  // CAMBIATO: usa androidx invece di android
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +38,7 @@ class WoTService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "PREFERENCES_UPDATED") {
                 val updatedType = intent.getStringExtra("update_type") ?: ""
+                Log.d("WOT_SERVICE", "Ricevuto broadcast: $updatedType")  // DEBUG
                 coroutineScope.launch {
                     serverMutex.withLock {
                         when (updatedType) {
@@ -121,10 +122,23 @@ class WoTService : Service() {
 
             isServerRunning = true
 
-            setServerStarting(false) // ora "started"
-            prefs.edit().putBoolean("server_started", true).commit()
-            sendServiceStatusBroadcast()
+            setServerStarting(false) // imposta starting = false
+            val success = prefs.edit()
+                .putBoolean("server_started", true)
+                .putBoolean("server_starting", false)
+                    .commit()
+
             Log.d("SERVER", "Server avviato con successo sulla porta $port")
+
+            // DEBUG: verifica che i valori siano effettivamente scritti
+            val verifyStarted = prefs.getBoolean("server_started", false)
+            val verifyStarting = prefs.getBoolean("server_starting", false)
+            Log.d("SERVER", "Verifica stato: started=$verifyStarted, starting=$verifyStarting")
+
+            if (success) {
+                sendServiceStatusBroadcast()
+            }
+
         } catch (e: Exception) {
             Log.e("WOT_SERVICE", "Errore durante avvio server: ", e)
             setServerStarting(false)
@@ -247,12 +261,15 @@ class WoTService : Service() {
 
             isServerRunning = false
             val prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-            prefs.edit{
-                putBoolean("server_started", false)
-                putBoolean("server_starting", false)
-                    .commit()
+            val success = prefs.edit()
+                .putBoolean("server_started", false)
+                .putBoolean("server_starting", false)
+                .commit()
+
+            if (success) {
+                sendServiceStatusBroadcast()
             }
-            sendServiceStatusBroadcast()
+
             Log.d("SERVER", "Stop completo!")
         } catch (e: Exception) {
             Log.e("WOT_SERVICE", "Errore durante stop server: ", e)
@@ -265,12 +282,22 @@ class WoTService : Service() {
 
     private fun setServerStarting(starting: Boolean) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-        prefs.edit().putBoolean("server_starting", starting).apply()
-        sendServiceStatusBroadcast()
+        // Use commit() for immediate writing
+        val success = prefs.edit()
+            .putBoolean("server_starting", starting)
+            .commit()
+
+        Log.d("SERVER", "Impostato server_starting = $starting, success = $success")
+
+        // Send broadcast after ensuring the preference is written
+        if (success) {
+            sendServiceStatusBroadcast()
+        }
     }
 
     private fun sendServiceStatusBroadcast() {
         val intent = Intent("SERVICE_STATUS_CHANGED")
         sendBroadcast(intent)
+        Log.d("WOT_SERVICE", "Inviato broadcast SERVICE_STATUS_CHANGED")
     }
 }

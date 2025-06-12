@@ -8,23 +8,43 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import android.os.Handler
-import android.preference.PreferenceManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.preference.PreferenceManager
 
 class DataFragment : Fragment() {
 
     private var mediaButton: Button? = null
     private var sensorButton: Button? = null
+    private val updateHandler = Handler(Looper.getMainLooper())
 
     private val serviceStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "SERVICE_STATUS_CHANGED") {
-                updateButtonStates()
+                // Add a small delay to ensure preferences are written
+                updateHandler.postDelayed({
+                    if (isAdded) {
+                        updateButtonStates()
+                    }
+                }, 100)
+            }
+        }
+    }
+
+    // Also listen for preference changes directly
+    private val preferenceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "PREFERENCES_UPDATED") {
+                // When preferences are updated, check server status after a delay
+                updateHandler.postDelayed({
+                    if (isAdded) {
+                        updateButtonStates()
+                    }
+                }, 200)
             }
         }
     }
@@ -53,16 +73,31 @@ class DataFragment : Fragment() {
         super.onResume()
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
             Context.RECEIVER_NOT_EXPORTED else 0
+
+        // Register for both service status and preference updates
         requireContext().registerReceiver(
             serviceStatusReceiver,
             IntentFilter("SERVICE_STATUS_CHANGED"),
             flags
         )
-        Handler(Looper.getMainLooper()).postDelayed ({
+
+        requireContext().registerReceiver(
+            preferenceReceiver,
+            IntentFilter("PREFERENCES_UPDATED"),
+            flags
+        )
+
+        // Update immediately and after a delay to catch any missed updates
+        updateHandler.post {
             if (isAdded) {
                 updateButtonStates()
             }
-        }, 200)
+        }
+        updateHandler.postDelayed({
+            if (isAdded) {
+                updateButtonStates()
+            }
+        }, 300)
     }
 
     override fun onPause() {
@@ -70,8 +105,14 @@ class DataFragment : Fragment() {
         try {
             requireContext().unregisterReceiver(serviceStatusReceiver)
         } catch (e: Exception) {
-            // Non fare nulla
+            // Ignore
         }
+        try {
+            requireContext().unregisterReceiver(preferenceReceiver)
+        } catch (e: Exception) {
+            // Ignore
+        }
+        updateHandler.removeCallbacksAndMessages(null)
     }
 
     private fun handleMediaButtonClick() {
@@ -125,12 +166,17 @@ class DataFragment : Fragment() {
                 sensorButton?.text = "Sensori"
             }
         }
+
+        // Debug logging
+        android.util.Log.d("DATAFRAGMENT", "Updated button states - Status: $serverStatus, Enabled: $isEnabled")
     }
 
     private fun getServerStatus(): ServerStatus {
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         val isStarted = prefs.getBoolean("server_started", false)
         val isStarting = prefs.getBoolean("server_starting", false)
+
+        android.util.Log.d("DATAFRAGMENT", "Server status check - started: $isStarted, starting: $isStarting")
 
         return when {
             isStarted -> ServerStatus.RUNNING

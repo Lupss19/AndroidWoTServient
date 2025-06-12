@@ -12,8 +12,24 @@ import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 
-// Mostra elenco di switch -- ognuno permette di scegliere se condividere o no sensore -- viene salvata la preferenza usando come chiave "share_sensor_<nomesensore>"
 class DynamicSensorSettingsFragment : PreferenceFragmentCompat() {
+
+    // Lista dei sensori principali con valori numerici misurabili
+    private val mainSensors = listOf(
+        SensorInfo(Sensor.TYPE_ACCELEROMETER, "Accelerometro", "X, Y, Z (m/s²)", "Misura accelerazione sui 3 assi"),
+        SensorInfo(Sensor.TYPE_GYROSCOPE, "Giroscopio", "X, Y, Z (rad/s)", "Misura velocità angolare sui 3 assi"),
+        SensorInfo(Sensor.TYPE_MAGNETIC_FIELD, "Campo Magnetico", "X, Y, Z (μT)", "Misura campo magnetico sui 3 assi"),
+        SensorInfo(Sensor.TYPE_LIGHT, "Luminosità", "Lux", "Misura intensità luminosa ambientale"),
+        SensorInfo(Sensor.TYPE_PROXIMITY, "Prossimità", "cm", "Misura distanza di oggetti vicini"),
+        SensorInfo(Sensor.TYPE_PRESSURE, "Pressione", "hPa", "Misura pressione atmosferica"),
+        SensorInfo(Sensor.TYPE_AMBIENT_TEMPERATURE, "Temperatura", "°C", "Misura temperatura ambientale"),
+        SensorInfo(Sensor.TYPE_RELATIVE_HUMIDITY, "Umidità", "%", "Misura umidità relativa"),
+        SensorInfo(Sensor.TYPE_LINEAR_ACCELERATION, "Accelerazione Lineare", "X, Y, Z (m/s²)", "Accelerazione senza gravità"),
+        SensorInfo(Sensor.TYPE_ROTATION_VECTOR, "Vettore Rotazione", "X, Y, Z, W", "Orientamento del dispositivo"),
+        SensorInfo(Sensor.TYPE_GRAVITY, "Gravità", "X, Y, Z (m/s²)", "Forza di gravità sui 3 assi"),
+        SensorInfo(Sensor.TYPE_STEP_COUNTER, "Contapassi", "steps", "Numero totale di passi"),
+        SensorInfo(Sensor.TYPE_HEART_RATE, "Frequenza Cardiaca", "bpm", "Battiti cardiaci per minuto")
+    )
 
     private val preferenceChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -33,19 +49,34 @@ class DynamicSensorSettingsFragment : PreferenceFragmentCompat() {
         preferenceScreen = screen
 
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val sensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
-
         val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
-        for(sensor in sensors) {
-            val key = "share_sensor_${sensor.name}"
+
+        // Crea preferenze solo per i sensori principali che sono disponibili
+        for (sensorInfo in mainSensors) {
+            val sensor = sensorManager.getDefaultSensor(sensorInfo.type)
+            if (sensor != null) {
+                val key = "share_sensor_${sensorInfo.name.replace(" ", "_").lowercase()}"
+                val pref = SwitchPreferenceCompat(context).apply {
+                    title = sensorInfo.name
+                    summary = "${sensorInfo.description}\nValori: ${sensorInfo.values}"
+                    this.key = key
+                    setDefaultValue(false)
+                }
+                screen.addPreference(pref)
+                Log.d("SENSOR_PREFS", "Added preference for: ${sensorInfo.name}")
+            } else {
+                Log.d("SENSOR_PREFS", "Sensor not available: ${sensorInfo.name}")
+            }
+        }
+
+        // Se nessun sensore è disponibile, mostra un messaggio
+        if (screen.preferenceCount == 0) {
             val pref = SwitchPreferenceCompat(context).apply {
-                title = sensor.name
-                summary = "Abilita/disabilita ${sensor.name}"
-                this.key = key
-                setDefaultValue(false)
+                title = "Nessun sensore disponibile"
+                summary = "Il dispositivo non ha sensori compatibili"
+                isEnabled = false
             }
             screen.addPreference(pref)
-            Log.d("SENSOR_PREFS", "Added preference key: share_sensor_${sensor.name}")
         }
 
         initialSensorPrefs = sharedPrefs.all.filterKeys { it.startsWith("share_sensor_") }
@@ -72,12 +103,18 @@ class DynamicSensorSettingsFragment : PreferenceFragmentCompat() {
 
         if (currentSensorPrefs != initialSensorPrefs) {
             Log.d("DYNAMIC_PREF", "Preferenze dei sensori cambiate, riavvio servizio..")
-            // Riavvo dal Service
             context.sendBroadcast(
                 Intent("PREFERENCES_UPDATED").putExtra("update_type", "sensors_restart")
             )
-
             Log.d("DYNAMIC_PREF", "Broadcast per restart Service inviato!")
         }
     }
+
+    // Data class per rappresentare le informazioni di un sensore
+    private data class SensorInfo(
+        val type: Int,
+        val name: String,
+        val values: String,
+        val description: String
+    )
 }
