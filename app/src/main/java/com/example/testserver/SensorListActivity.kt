@@ -3,28 +3,63 @@ package com.example.testserver
 import android.app.Activity
 import android.content.Context
 import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
-import android.os.PersistableBundle
+import android.widget.ScrollView
 import android.widget.TextView
 
-class SensorListActivity : Activity() {
+class SensorListActivity : Activity(), SensorEventListener {
+
+    private lateinit var sensorManager: SensorManager
+    private lateinit var textView: TextView
+    private val sensorValues = mutableMapOf<Int, FloatArray>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val textView = TextView(this)
-        setContentView(textView)
+        textView = TextView(this)
+        val scrollView = ScrollView(this).apply {
+            addView(textView)
+        }
+        setContentView(scrollView)
 
-        val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val sensorList: List<Sensor> = sensorManager.getSensorList(Sensor.TYPE_ALL)
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val sensorList = sensorManager.getSensorList(Sensor.TYPE_ALL)
 
-        val sensorInfo = StringBuilder()
-        sensorInfo.append("Sensori disponibili (${sensorList.size}): \n\n")
-
+        // Registrazione listener per ciascun sensore
         for (sensor in sensorList) {
-            sensorInfo.append("- ${sensor.name} (${sensor.type})\n")
+            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
 
-        textView.text = sensorInfo.toString()
+        updateSensorDisplay(sensorList)
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        sensorValues[event.sensor.type] = event.values.clone()
+        updateSensorDisplay(sensorManager.getSensorList(Sensor.TYPE_ALL))
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Non necessario per questa visualizzazione
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        sensorManager.unregisterListener(this)
+    }
+
+    private fun updateSensorDisplay(sensorList: List<Sensor>) {
+        val info = StringBuilder()
+        info.append("Sensori disponibili (${sensorList.size}):\n\n")
+        for (sensor in sensorList) {
+            val values = sensorValues[sensor.type]
+            val valuesString = values?.joinToString(prefix = "[", postfix = "]") { "%.2f".format(it) } ?: "[N/A]"
+            info.append("- ${sensor.name} (${sensor.type}) → $valuesString\n")
+        }
+        runOnUiThread {
+            textView.text = info.toString()
+        }
     }
 }
