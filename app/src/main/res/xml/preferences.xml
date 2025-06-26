@@ -32,6 +32,32 @@
 
     </PreferenceCategory>
 
+    <!-- Parametri WebSocket -->
+    <PreferenceCategory android:title="WebSocket">
+        <SwitchPreference
+            android:key="enable_websocket"
+            android:title="Abilita WebSocket"
+            android:summary="Attiva il server WebSocket per comunicazione real-time"
+            android:defaultValue="true"
+            android:selectable="true" />
+
+        <EditTextPreference
+            android:key="websocket_port"
+            android:title="Porta WebSocket"
+            android:inputType="number"
+            android:summary="Porta per il server WebSocket (es. 8082)"
+            android:defaultValue="8082"
+            android:dependency="enable_websocket"
+            android:selectable="false"/>
+
+        <Preference
+            android:title="ℹ️ Informazioni WebSocket"
+            android:summary="WebSocket permette comunicazione bidirezionale real-time con i client. Usa una porta diversa da HTTP."
+            android:dependency="enable_websocket"
+            android:selectable="false" />
+
+    </PreferenceCategory>
+
     <!-- Parametri MQTT -->
     <PreferenceCategory android:title="MQTT">
         <SwitchPreference

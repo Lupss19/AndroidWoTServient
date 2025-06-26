@@ -26,6 +26,8 @@ import kotlinx.coroutines.sync.withLock
 import org.eclipse.thingweb.binding.mqtt.MqttClientConfig
 import org.eclipse.thingweb.binding.mqtt.MqttProtocolClientFactory
 import org.eclipse.thingweb.binding.mqtt.MqttProtocolServer
+import org.eclipse.thingweb.binding.websocket.WebSocketProtocolClientFactory
+import org.eclipse.thingweb.binding.websocket.WebSocketProtocolServer
 
 class WoTService : Service() {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -120,6 +122,9 @@ class WoTService : Service() {
             Log.d("SERVER", "Avvio Server sulla porta $port")
             Log.d("SERVER", "Usa IP locale: $useLocalIp, Hostname: $actualHostname")
 
+            val servers = mutableListOf<ai.anfc.lmos.wot.binding.ProtocolServer>()
+            val clientFactories = mutableListOf<ai.anfc.lmos.wot.binding.ProtocolClientFactory>()
+
             // HTTP
             val httpServer = if (useLocalIp) {
                 // When using local IP, bind to all interfaces (0.0.0.0)
@@ -129,6 +134,8 @@ class WoTService : Service() {
                 // When using localhost, can bind specifically to localhost
                 HttpProtocolServer(bindPort = port, bindHost = "127.0.0.1")
             }
+            servers.add(httpServer)
+            clientFactories.add(HttpProtocolClientFactory())
 
             // MQTT Configuration
             val enableMqtt = prefs.getBoolean("enable_mqtt", false)
@@ -139,17 +146,44 @@ class WoTService : Service() {
             val mqttPassword = prefs.getString("mqtt_password", "")
 
             //MQTT
-            val mqttConfig = MqttClientConfig(
-                host = mqttBrokerHost,
-                port = mqttBrokerPort,
-                clientId = mqttClientId ?: "wot-client-${System.currentTimeMillis()}"
-            )
-            val mqttServer = MqttProtocolServer(mqttConfig)
-            val mqttClient = MqttProtocolClientFactory(mqttConfig)
+            if (enableMqtt) {
+                val mqttConfig = MqttClientConfig(
+                    host = mqttBrokerHost,
+                    port = mqttBrokerPort,
+                    clientId = mqttClientId ?: "wot-client-${System.currentTimeMillis()}"
+                )
+                val mqttServer = MqttProtocolServer(mqttConfig)
+                val mqttClient = MqttProtocolClientFactory(mqttConfig)
+                servers.add(mqttServer)
+                clientFactories.add(mqttClient)
+            }
+
+            // WebSocket
+            val enableWebSocket = prefs.getBoolean("enable_websocket", true) // Default to enabled
+            val webSocketPort = prefs.getString("websocket_port", "8081")?.toIntOrNull() ?: 8081
+            var webSocketServer: WebSocketProtocolServer? = null
+            if (enableWebSocket) {
+                val wsBindHost = if (useLocalIp) "0.0.0.0" else "127.0.0.1"
+                val wsBaseUrls = if (useLocalIp) {
+                    listOf("ws://$actualHostname:$webSocketPort", "ws://localhost:$webSocketPort")
+                } else {
+                    listOf("ws://localhost:$webSocketPort")
+                }
+
+                webSocketServer = WebSocketProtocolServer(
+                    wait = false,
+                    bindHost = wsBindHost,
+                    bindPort = webSocketPort,
+                    baseUrls = wsBaseUrls
+                )
+                val webSocketClient = WebSocketProtocolClientFactory()
+                servers.add(webSocketServer)
+                clientFactories.add(webSocketClient)
+            }
 
             servient = Servient(
-                servers = listOf(httpServer, mqttServer),
-                clientFactories = listOf(HttpProtocolClientFactory(), mqttClient)
+                servers = servers,
+                clientFactories = clientFactories
             )
 
             wot = Wot.create(servient!!)

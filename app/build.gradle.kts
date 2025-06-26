@@ -61,6 +61,7 @@ dependencies {
     implementation("org.eclipse.thingweb:kotlin-wot-binding-http:0.1.0-SNAPSHOT"){
         exclude(group = "io.ktor", module = "ktor-server-metrics-micrometer")
     }
+    implementation("org.eclipse.thingweb:kotlin-wot-binding-websocket:0.1.0-SNAPSHOT")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
