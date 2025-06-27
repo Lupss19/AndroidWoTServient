@@ -175,10 +175,8 @@ class WoTService : Service() {
                 }
 
                 webSocketServer = WebSocketProtocolServer(
-                    wait = false,
                     bindHost = wsBindHost,
                     bindPort = webSocketPort,
-                    baseUrls = wsBaseUrls
                 )
                 val webSocketClient = WebSocketProtocolClientFactory()
                 servers.add(webSocketServer)

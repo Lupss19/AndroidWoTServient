@@ -58,7 +58,6 @@ class SensorPublisher(
                 val values = readSensorValues(context, type)
 
                 if (values.isNotEmpty()) {
-                    // Pubblica attraverso il WoT binding (incluso MQTT se configurato)
                     publishWoTPropertyChanges(sensor, values, sensorValuesCount, name, type)
                 }
             } catch (e: Exception) {
@@ -69,25 +68,43 @@ class SensorPublisher(
 
     private suspend fun publishWoTPropertyChanges(sensor: Sensor, values: FloatArray, sensorValuesCount: Int, name: String, type: Int) {
         if (sensorValuesCount == 1) {
-            // Sensori singoli (luce, prossimità, temperatura, etc.)
             val propName = sanitizeSensorName(name, type)
             val jsonValue = objectMapper.valueToTree<JsonNode>(values[0])
             val interactionInput = InteractionInput.Value(jsonValue)
-            thing.emitPropertyChange(propName, interactionInput)
-            Log.e("WOT_PUBLISHER_DEBUG", "🚀 Emesso evento: $propName = ${values[0]}")
-            Log.e("WOT_PUBLISHER_DEBUG", "📡 Topic MQTT dovrebbe essere: smartphone/properties/$propName")
-            Log.d("SENSOR_PUBLISHER", "WoT: Pubblicato $propName: ${values[0]}")
+
+            // Emetti eventi per tutti i binding
+            try {
+                thing.emitPropertyChange(propName, interactionInput)
+                Log.d("SENSOR_PUBLISHER", "📡 Pubblicato $propName = ${values[0]}")
+                Log.d("SENSOR_PUBLISHER", "🚀 MQTT topic: smartphone/properties/$propName")
+                Log.d("SENSOR_PUBLISHER", "🔌 WebSocket event inviato per: $propName")
+
+                // DEBUG: Verifica se l'evento è stato effettivamente emesso
+                Log.d("WS_DEBUG", "🔍 Tentativo emissione evento WebSocket per $propName")
+
+            } catch (e: Exception) {
+                Log.e("SENSOR_PUBLISHER", "❌ Errore emittendo evento per $propName", e)
+            }
+
         } else {
-            // Sensori multi-valore (accelerometro, giroscopio, magnetometro)
             for (i in 0 until minOf(sensorValuesCount, values.size)) {
                 val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i)
                 val propName = "${sanitizeSensorName(name, type)}_$suffix"
                 val jsonValue = objectMapper.valueToTree<JsonNode>(values[i])
                 val interactionInput = InteractionInput.Value(jsonValue)
-                thing.emitPropertyChange(propName, interactionInput)
-                Log.e("WOT_PUBLISHER_DEBUG", "🚀 Emesso evento: $propName = ${values[0]}")
-                Log.e("WOT_PUBLISHER_DEBUG", "📡 Topic MQTT dovrebbe essere: smartphone/properties/$propName")
-                Log.d("SENSOR_PUBLISHER", "WoT: Pubblicato $propName: ${values[i]}")
+
+                try {
+                    thing.emitPropertyChange(propName, interactionInput)
+                    Log.d("SENSOR_PUBLISHER", "📡 Pubblicato $propName = ${values[i]}")
+                    Log.d("SENSOR_PUBLISHER", "🚀 MQTT topic: smartphone/properties/$propName")
+                    Log.d("SENSOR_PUBLISHER", "🔌 WebSocket event inviato per: $propName")
+
+                    // DEBUG: Verifica se l'evento è stato effettivamente emesso
+                    Log.d("WS_DEBUG", "🔍 Tentativo emissione evento WebSocket per $propName")
+
+                } catch (e: Exception) {
+                    Log.e("SENSOR_PUBLISHER", "❌ Errore emittendo evento per $propName", e)
+                }
             }
         }
     }
@@ -130,7 +147,6 @@ class SensorPublisher(
                 if (event != null && event.sensor.type == sensorType && !hasReceivedData) {
                     hasReceivedData = true
                     values = event.values.copyOf()
-                    // Log.d("SENSOR_READ", "Ricevuti dati per sensore $sensorType: ${values.contentToString()}")
                     latch.countDown()
                 }
             }
@@ -150,7 +166,6 @@ class SensorPublisher(
                 return floatArrayOf()
             }
 
-            // Aspetta dati del sensore (timeout 1 secondo)
             val received = latch.await(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
 
             if (!received) {
