@@ -615,7 +615,7 @@ class Server(
                 if (event != null && event.sensor.type == sensorType && !hasReceivedData) {
                     hasReceivedData = true
                     values = event.values.copyOf()
-                    Log.d("SENSOR_READ", "Ricevuti dati per sensore $sensorType: ${values.contentToString()}")
+                    // Log.d("SENSOR_READ", "Ricevuti dati per sensore $sensorType: ${values.contentToString()}")
                     latch.countDown()
                     // sensorManager.unregisterListener(this)
                 }
@@ -633,11 +633,11 @@ class Server(
             )
 
             if (!registered) {
-                Log.e("SENSOR_READ", "Impossibile registrare listener per sensore $sensorType")
+                // Log.e("SENSOR_READ", "Impossibile registrare listener per sensore $sensorType")
                 return floatArrayOf()
             }
 
-            Log.d("SENSOR_READ", "Listener registrato per sensore $sensorType, attendo dati...")
+            // Log.d("SENSOR_READ", "Listener registrato per sensore $sensorType, attendo dati...")
 
             // Aspetta più a lungo per i dati del sensore
             val received = latch.await(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
