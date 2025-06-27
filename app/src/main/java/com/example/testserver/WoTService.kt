@@ -142,11 +142,13 @@ class WoTService : Service() {
             val mqttBrokerHost = prefs.getString("mqtt_broker_host", "test.mosquitto.org") ?: "test.mosquitto.org"
             val mqttBrokerPort = prefs.getString("mqtt_broker_port", "1883")?.toIntOrNull() ?: 1883
             val mqttClientId = prefs.getString("mqtt_client_id", "wot-client-${System.currentTimeMillis()}")
-            val mqttUsername = prefs.getString("mqtt_username", "")
-            val mqttPassword = prefs.getString("mqtt_password", "")
+            Log.e("WOT_MQTT_DEBUG", "🔧 MQTT enabled: $enableMqtt")
+            Log.e("WOT_MQTT_DEBUG", "🔧 MQTT host: $mqttBrokerHost")
+            Log.e("WOT_MQTT_DEBUG", "🔧 MQTT port: $mqttBrokerPort")
 
             //MQTT
             if (enableMqtt) {
+                Log.e("WOT_MQTT_DEBUG", "✅ Aggiungendo MQTT server...")
                 val mqttConfig = MqttClientConfig(
                     host = mqttBrokerHost,
                     port = mqttBrokerPort,
@@ -156,6 +158,8 @@ class WoTService : Service() {
                 val mqttClient = MqttProtocolClientFactory(mqttConfig)
                 servers.add(mqttServer)
                 clientFactories.add(mqttClient)
+            } else {
+                Log.e("WOT_MQTT_DEBUG", "❌ MQTT DISABILITATO!")
             }
 
             // WebSocket

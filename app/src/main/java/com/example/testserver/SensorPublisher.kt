@@ -35,7 +35,7 @@ class SensorPublisher(
             while (isPublishing) {
                 try {
                     publishSensorValues()
-                    delay(500)
+                    delay(500) // Pubblica ogni 500ms
                 } catch (e: Exception) {
                     Log.e("SENSOR_PUBLISHER", "Errore durante pubblicazione: ", e)
                     delay(1000)
@@ -58,25 +58,36 @@ class SensorPublisher(
                 val values = readSensorValues(context, type)
 
                 if (values.isNotEmpty()) {
-                    if (sensorValuesCount == 1) {
-                        val propName = sanitizeSensorName(name, type)
-                        val jsonValue = objectMapper.valueToTree<JsonNode>(values[0])
-                        val interactionInput = InteractionInput.Value(jsonValue)
-                        thing.emitPropertyChange(propName, interactionInput)
-                        Log.d("SENSOR_PUBLISHER", "Pubblicato $propName: ${values[0]}")
-                    } else {
-                        for (i in 0 until minOf(sensorValuesCount, values.size)) {
-                            val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i)
-                            val propName = "${sanitizeSensorName(name, type)}_$suffix"
-                            val jsonValue = objectMapper.valueToTree<JsonNode>(values[i])
-                            val interactionInput = InteractionInput.Value(jsonValue)
-                            thing.emitPropertyChange(propName, interactionInput)
-                            Log.d("SENSOR_PUBLISHER", "Pubblicato $propName: ${values[i]}")
-                        }
-                    }
+                    // Pubblica attraverso il WoT binding (incluso MQTT se configurato)
+                    publishWoTPropertyChanges(sensor, values, sensorValuesCount, name, type)
                 }
             } catch (e: Exception) {
                 Log.e("SENSOR_PUBLISHER", "Errore pubblicando sensore ${sensor.name}: ", e)
+            }
+        }
+    }
+
+    private suspend fun publishWoTPropertyChanges(sensor: Sensor, values: FloatArray, sensorValuesCount: Int, name: String, type: Int) {
+        if (sensorValuesCount == 1) {
+            // Sensori singoli (luce, prossimità, temperatura, etc.)
+            val propName = sanitizeSensorName(name, type)
+            val jsonValue = objectMapper.valueToTree<JsonNode>(values[0])
+            val interactionInput = InteractionInput.Value(jsonValue)
+            thing.emitPropertyChange(propName, interactionInput)
+            Log.e("WOT_PUBLISHER_DEBUG", "🚀 Emesso evento: $propName = ${values[0]}")
+            Log.e("WOT_PUBLISHER_DEBUG", "📡 Topic MQTT dovrebbe essere: smartphone/properties/$propName")
+            Log.d("SENSOR_PUBLISHER", "WoT: Pubblicato $propName: ${values[0]}")
+        } else {
+            // Sensori multi-valore (accelerometro, giroscopio, magnetometro)
+            for (i in 0 until minOf(sensorValuesCount, values.size)) {
+                val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i)
+                val propName = "${sanitizeSensorName(name, type)}_$suffix"
+                val jsonValue = objectMapper.valueToTree<JsonNode>(values[i])
+                val interactionInput = InteractionInput.Value(jsonValue)
+                thing.emitPropertyChange(propName, interactionInput)
+                Log.e("WOT_PUBLISHER_DEBUG", "🚀 Emesso evento: $propName = ${values[0]}")
+                Log.e("WOT_PUBLISHER_DEBUG", "📡 Topic MQTT dovrebbe essere: smartphone/properties/$propName")
+                Log.d("SENSOR_PUBLISHER", "WoT: Pubblicato $propName: ${values[i]}")
             }
         }
     }
@@ -119,9 +130,8 @@ class SensorPublisher(
                 if (event != null && event.sensor.type == sensorType && !hasReceivedData) {
                     hasReceivedData = true
                     values = event.values.copyOf()
-                    Log.d("SENSOR_READ", "Ricevuti dati per sensore $sensorType: ${values.contentToString()}")
+                    // Log.d("SENSOR_READ", "Ricevuti dati per sensore $sensorType: ${values.contentToString()}")
                     latch.countDown()
-                    // sensorManager.unregisterListener(this)
                 }
             }
 
@@ -129,7 +139,6 @@ class SensorPublisher(
         }
 
         try {
-            // Registra il listener con delay più veloce per lettura immediata
             val registered = sensorManager.registerListener(
                 listener,
                 sensor,
@@ -141,9 +150,7 @@ class SensorPublisher(
                 return floatArrayOf()
             }
 
-            Log.d("SENSOR_READ", "Listener registrato per sensore $sensorType, attendo dati...")
-
-            // Aspetta più a lungo per i dati del sensore
+            // Aspetta dati del sensore (timeout 1 secondo)
             val received = latch.await(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
 
             if (!received) {
@@ -154,9 +161,7 @@ class SensorPublisher(
             Log.e("SENSOR_READ", "Interruzione durante lettura sensore $sensorType", e)
             Thread.currentThread().interrupt()
         } finally {
-            // Assicurati sempre di de-registrare il listener
             sensorManager.unregisterListener(listener)
-            Log.d("SENSOR_READ", "Listener de-registrato per sensore $sensorType")
         }
 
         return values
