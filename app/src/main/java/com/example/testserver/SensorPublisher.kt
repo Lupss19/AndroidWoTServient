@@ -69,19 +69,26 @@ class SensorPublisher(
     private suspend fun publishWoTPropertyChanges(sensor: Sensor, values: FloatArray, sensorValuesCount: Int, name: String, type: Int) {
         if (sensorValuesCount == 1) {
             val propName = sanitizeSensorName(name, type)
-            val jsonValue = objectMapper.valueToTree<JsonNode>(values[0])
+
+            // Crea JSON WoT completo per MQTT (come WebSocket)
+            val wotData = mapOf(
+                "messageType" to "propertyReading",
+                "thingId" to "smartphone",
+                "messageId" to java.util.UUID.randomUUID().toString(),
+                "correlationId" to java.util.UUID.randomUUID().toString(),
+                "property" to propName,
+                "data" to values[0],
+                "timestamp" to (System.currentTimeMillis() / 1000.0) // Timestamp in secondi
+            )
+
+            val jsonValue = objectMapper.valueToTree<JsonNode>(wotData)
             val interactionInput = InteractionInput.Value(jsonValue)
 
-            // Emetti eventi per tutti i binding
             try {
                 thing.emitPropertyChange(propName, interactionInput)
-                Log.d("SENSOR_PUBLISHER", "📡 Pubblicato $propName = ${values[0]}")
-                Log.d("SENSOR_PUBLISHER", "🚀 MQTT topic: smartphone/properties/$propName")
+                Log.d("SENSOR_PUBLISHER", "📡 Pubblicato $propName = ${values[0]} (JSON WoT completo)")
+                Log.d("SENSOR_PUBLISHER", "🚀 MQTT payload: $wotData")
                 Log.d("SENSOR_PUBLISHER", "🔌 WebSocket event inviato per: $propName")
-
-                // DEBUG: Verifica se l'evento è stato effettivamente emesso
-                Log.d("WS_DEBUG", "🔍 Tentativo emissione evento WebSocket per $propName")
-
             } catch (e: Exception) {
                 Log.e("SENSOR_PUBLISHER", "❌ Errore emittendo evento per $propName", e)
             }
@@ -90,18 +97,26 @@ class SensorPublisher(
             for (i in 0 until minOf(sensorValuesCount, values.size)) {
                 val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i)
                 val propName = "${sanitizeSensorName(name, type)}_$suffix"
-                val jsonValue = objectMapper.valueToTree<JsonNode>(values[i])
+
+                // Crea JSON WoT completo per ogni asse
+                val wotData = mapOf(
+                    "messageType" to "propertyReading",
+                    "thingId" to "smartphone",
+                    "messageId" to java.util.UUID.randomUUID().toString(),
+                    "correlationId" to java.util.UUID.randomUUID().toString(),
+                    "property" to propName,
+                    "data" to values[i],
+                    "timestamp" to (System.currentTimeMillis() / 1000.0)
+                )
+
+                val jsonValue = objectMapper.valueToTree<JsonNode>(wotData)
                 val interactionInput = InteractionInput.Value(jsonValue)
 
                 try {
                     thing.emitPropertyChange(propName, interactionInput)
-                    Log.d("SENSOR_PUBLISHER", "📡 Pubblicato $propName = ${values[i]}")
-                    Log.d("SENSOR_PUBLISHER", "🚀 MQTT topic: smartphone/properties/$propName")
+                    Log.d("SENSOR_PUBLISHER", "📡 Pubblicato $propName = ${values[i]} (JSON WoT completo)")
+                    Log.d("SENSOR_PUBLISHER", "🚀 MQTT payload: $wotData")
                     Log.d("SENSOR_PUBLISHER", "🔌 WebSocket event inviato per: $propName")
-
-                    // DEBUG: Verifica se l'evento è stato effettivamente emesso
-                    Log.d("WS_DEBUG", "🔍 Tentativo emissione evento WebSocket per $propName")
-
                 } catch (e: Exception) {
                     Log.e("SENSOR_PUBLISHER", "❌ Errore emittendo evento per $propName", e)
                 }
