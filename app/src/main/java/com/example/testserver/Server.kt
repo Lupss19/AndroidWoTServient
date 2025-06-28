@@ -196,6 +196,12 @@ class Server(
                 title = "Check if in pocket"
                 description = "Returns true if the phone is likely in the user's pocket"
             }
+            objectProperty("allSensors") {
+                title = "All sensor readings"
+                description = "Returns all sensor data in one request"
+                readOnly = true
+                observable = false
+            }
         }.apply {
             // Aggiungi i property read handlers
             for (sensor in enabledSensors) {
@@ -447,6 +453,32 @@ class Server(
                         InteractionInput.Value(jsonNodeFactory.booleanNode(false))
                     }
                 }
+            }
+            setPropertyReadHandler("allSensors") {
+                ServientStats.logRequest(thingId, "readProperty", "allSensors")
+
+                val allProperties = jsonNodeFactory.objectNode()
+
+                // Leggi ogni proprietà e mettila nell'oggetto
+                for (sensor in enabledSensors) {
+                    val type = sensor.type
+                    val name = sensor.name
+                    val sensorValuesCount = getSensorValuesCount(type)
+                    val values = readSensorValues(context, type)
+
+                    if (sensorValuesCount == 1) {
+                        val propName = sanitizeSensorName(name, type)
+                        allProperties.put(propName, values.getOrNull(0) ?: -1f)
+                    } else {
+                        for (i in 0 until sensorValuesCount) {
+                            val suffix = listOf("x", "y", "z", "w", "v").getOrNull(i) ?: "v$i"
+                            val propName = "${sanitizeSensorName(name, type)}_$suffix"
+                            allProperties.put(propName, values.getOrNull(i) ?: -1f)
+                        }
+                    }
+                }
+
+                InteractionInput.Value(allProperties)
             }
         }
 
