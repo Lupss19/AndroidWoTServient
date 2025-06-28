@@ -207,7 +207,11 @@ class Server(
                     setPropertyReadHandler(propName) {
                         ServientStats.logRequest(thingId, "readProperty", propName)
                         val v = readSensorValues(context, type)
-                        InteractionInput.Value(jsonNodeFactory.numberNode(v.getOrNull(0) ?: -1f))
+                        val value = v.getOrNull(0) ?: -1f
+                        val wotResponse = createWoTResponse(propName, value)
+                        Log.d("SERVER_HTTP", "HTTP Response per $propName: $wotResponse")
+
+                        InteractionInput.Value(wotResponse)
                     }
                 } else {
                     for (i in 0 until sensorValuesCount) {
@@ -216,11 +220,10 @@ class Server(
                         setPropertyReadHandler(propName) {
                             ServientStats.logRequest(thingId, "readProperty", propName)
                             val v = readSensorValues(context, type)
-                            InteractionInput.Value(
-                                jsonNodeFactory.numberNode(
-                                    v.getOrNull(i) ?: -1f
-                                )
-                            )
+                            val value = v.getOrNull(i) ?: -1f
+                            val wotResponse = createWoTResponse(propName, value)
+                            Log.d("SERVER_HTTP", "HTTP Response per $propName: $wotResponse")
+                            InteractionInput.Value(wotResponse)
                         }
                     }
                 }
@@ -459,8 +462,18 @@ class Server(
             Log.e("SERVER", "Errore creazione SmartphoneThing", e)
             return null
         }
+    }
 
-
+    private fun createWoTResponse(propertyName: String, value: Float): JsonNode {
+        val response = jsonNodeFactory.objectNode()
+        response.put("messageType", "propertyReading")
+        response.put("thingId", "smartphone")
+        response.put("messageId", java.util.UUID.randomUUID().toString())
+        response.put("correlationId", java.util.UUID.randomUUID().toString())
+        response.put("property", propertyName)
+        response.put("data", value)
+        response.put("timestamp", System.currentTimeMillis() / 1000.0) // Timestamp in secondi con decimali come WebSocket
+        return response
     }
 
     private fun isSensorEnabled(sensorType: Int): Boolean {
