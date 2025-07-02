@@ -73,6 +73,11 @@ class Server(
         val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
+        // Controlla quali protocolli sono abilitati
+        val enableHttp = sharedPrefs.getBoolean("enable_http", false)
+        val enableWebSocket = sharedPrefs.getBoolean("enable_websocket", false)
+        val enableMqtt = sharedPrefs.getBoolean("enable_mqtt", false)
+
         val useLocalIp = sharedPrefs.getBoolean("use_local_ip", false)
         val customHostname = sharedPrefs.getString("server_hostname", "")
 
@@ -115,9 +120,33 @@ class Server(
             title = thingTitle
             description = thingDescription
 
-            if (useLocalIp) {
+            if (enableHttp && useLocalIp) {
                 val port = sharedPrefs.getString("server_port", "8080")?.toIntOrNull() ?: 8080
                 base = "http://$actualHostname:$port/"
+                Log.d("SERVER", "✅ Base URL HTTP impostato: http://$actualHostname:$port/")
+            } else if (enableHttp) {
+                val port = sharedPrefs.getString("server_port", "8080")?.toIntOrNull() ?: 8080
+                base = "http://localhost:$port/"
+                Log.d("SERVER", "✅ Base URL HTTP impostato: http://localhost:$port/")
+            } else {
+                // 🚀 Se HTTP è disabilitato, imposta base per WebSocket o MQTT
+                if (enableWebSocket && useLocalIp) {
+                    val wsPort = sharedPrefs.getString("websocket_port", "8080")?.toIntOrNull() ?: 8080
+                    base = "ws://$actualHostname:$wsPort/"
+                    Log.d("SERVER", "🔌 Base URL WebSocket impostato: ws://$actualHostname:$wsPort/")
+                } else if (enableWebSocket) {
+                    val wsPort = sharedPrefs.getString("websocket_port", "8080")?.toIntOrNull() ?: 8080
+                    base = "ws://localhost:$wsPort/"
+                    Log.d("SERVER", "🔌 Base URL WebSocket impostato: ws://localhost:$wsPort/")
+                } else if (enableMqtt) {
+                    val mqttHost = sharedPrefs.getString("mqtt_broker_host", "test.mosquitto.org") ?: "test.mosquitto.org"
+                    val mqttPort = sharedPrefs.getString("mqtt_broker_port", "1883")?.toIntOrNull() ?: 1883
+                    base = "mqtt://$mqttHost:$mqttPort/"
+                    Log.d("SERVER", "📬 Base URL MQTT impostato: mqtt://$mqttHost:$mqttPort/")
+                } else {
+                    Log.w("SERVER", "⚠️ Nessun protocollo abilitato per base URL - usando default")
+                    // Non impostare base, lascia che il framework gestisca
+                }
             }
 
             // Aggiungi proprietà per ogni sensore abilitato

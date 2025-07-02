@@ -2,6 +2,13 @@
 
     <!-- Parametri servient -->
     <PreferenceCategory android:title="Servient">
+        <SwitchPreference
+            android:key="enable_http"
+            android:title="Abilita HTTP"
+            android:summary="Attiva il server HTTP per REST API"
+            android:defaultValue="true"
+            android:selectable="true" />
+
         <EditTextPreference
             android:key="server_port"
             android:title="Porta HTTP"
@@ -45,10 +52,10 @@
             android:key="websocket_port"
             android:title="Porta WebSocket"
             android:inputType="number"
-            android:summary="Porta per il server WebSocket (es. 8082)"
-            android:defaultValue="8082"
+            android:summary="Porta per il server WebSocket (es. 8080)"
+            android:defaultValue="8080"
             android:dependency="enable_websocket"
-            android:selectable="false"/>
+            android:selectable="true"/>
 
         <Preference
             android:title="ℹ️ Informazioni WebSocket"
@@ -70,10 +77,10 @@
         <EditTextPreference
             android:key="mqtt_broker_host"
             android:title="Host Broker MQTT"
-            android:summary="Indirizzo del broker MQTT (es. test.mosquitto.org)"
+            android:summary="Indirizzo del broker MQTT (test.mosquitto.org)"
             android:defaultValue="test.mosquitto.org"
             android:dependency="enable_mqtt"
-            android:selectable="false"/>
+            android:selectable="true"/>
 
         <EditTextPreference
             android:key="mqtt_broker_port"
@@ -82,7 +89,7 @@
             android:summary="Porta del broker MQTT (es. 1883)"
             android:defaultValue="1883"
             android:dependency="enable_mqtt"
-            android:selectable="false"/>
+            android:selectable="true"/>
 
         <EditTextPreference
             android:key="mqtt_client_id"
